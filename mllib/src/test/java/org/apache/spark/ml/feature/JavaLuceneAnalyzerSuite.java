@@ -27,11 +27,8 @@ import org.junit.Test;
 
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.SQLContext;
-import scala.collection.JavaConversions;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 public class JavaLuceneAnalyzerSuite {
   private transient JavaSparkContext jsc;
@@ -51,36 +48,56 @@ public class JavaLuceneAnalyzerSuite {
 
   @Test
   public void testStandardTokenizer() {
-    LuceneAnalyzer analyzer0 = new LuceneAnalyzer()
+    LuceneAnalyzer analyzer1 = new LuceneAnalyzer()
         .setInputCol("rawText")
-        .setOutputCol("tokens"); // Default: StandardTokenizer
+        .setOutputCol("tokens"); // Default analysis schema: StandardTokenizer + LowerCaseFilter
 
-    assertExpectedTokens(analyzer0, Lists.newArrayList(
-        new TokenizerTestData("Test for tokenization.", new String[]{"Test", "for", "tokenization"}),
-        new TokenizerTestData("Te,st. punct", new String[]{"Te", "st", "punct"})));
+    assertExpectedTokens(analyzer1, Lists.newArrayList(
+        new TokenizerTestData("Test for tokenization.", new String[]{"test", "for", "tokenization"}),
+        new TokenizerTestData("Te,st. punct", new String[]{"te", "st", "punct"})));
 
-    assertExpectedTokens(analyzer0, Lists.newArrayList(
-        new TokenizerTestData("Test for tokenization.", new String[]{"Test", "for", "tokenization"}),
-        new TokenizerTestData("Te,st. punct", new String[]{"Te", "st", "punct"})));
+    assertExpectedTokens(analyzer1, Lists.newArrayList(
+        new TokenizerTestData("Test for tokenization.", new String[]{"test", "for", "tokenization"}),
+        new TokenizerTestData("Te,st. punct", new String[]{"te", "st", "punct"})));
 
-    Map<String,String> tokenizerSpecification = new HashMap<>();
-    tokenizerSpecification.put("type", "standard");
-    tokenizerSpecification.put("maxTokenLength", "10");
-    analyzer0.setTokenizer(asScalaImmutableMap(tokenizerSpecification));
-    assertExpectedTokens(analyzer0, Lists.newArrayList(
+    String analysisSchema1 = json("{\n" +
+        "'schemaType': 'LuceneAnalyzerSchema.v1',\n" +
+        "'analyzers': [{\n" +
+        "  'name': 'StdTok_max10',\n" +
+        "  'tokenizer': {\n" +
+        "    'type': 'standard',\n" +
+        "    'maxTokenLength': '10'\n" +
+        "  }\n" +
+        "}],\n" +
+        "'inputColumns': [{\n" +
+        "  'regex': '.+',\n" +
+        "  'analyzer': 'StdTok_max10'\n" +
+        "}]}\n");
+    analyzer1.setAnalysisSchema(analysisSchema1);
+    assertExpectedTokens(analyzer1, Lists.newArrayList(
         new TokenizerTestData("我是中国人。 １２３４ Ｔｅｓｔｓ ",
             new String[]{"我", "是", "中", "国", "人", "１２３４", "Ｔｅｓｔｓ"}),
         new TokenizerTestData("some-dashed-phrase", new String[]{"some", "dashed", "phrase"})));
 
-    tokenizerSpecification.clear();
-    tokenizerSpecification.put("type", "standard");
-    tokenizerSpecification.put("maxTokenLength", "3");
-    LuceneAnalyzer analyzer1 = new LuceneAnalyzer()
-        .setDefaultLuceneMatchVersion("4.10.4")
-        .setTokenizer(asScalaImmutableMap(tokenizerSpecification))
+    String analysisSchema2 = json("{\n" +
+        "'schemaType': 'LuceneAnalyzerSchema.v1',\n" +
+        "'defaultLuceneMatchVersion': '4.10.4',\n" +
+        "'analyzers': [{\n" +
+        "  'name': 'StdTok_max3',\n" +
+        "  'tokenizer': {\n" +
+        "    'type': 'standard',\n" +
+        "    'maxTokenLength': '3'\n" +
+        "  }\n" +
+        "}],\n" +
+        "'inputColumns': [{\n" +
+        "  'regex': '.+',\n" +
+        "  'analyzer': 'StdTok_max3'\n" +
+        "}]}\n");
+    LuceneAnalyzer analyzer2 = new LuceneAnalyzer()
+        .setAnalysisSchema(analysisSchema2)
         .setInputCol("rawText")
         .setOutputCol("tokens");
-    assertExpectedTokens(analyzer1, Lists.newArrayList(
+    assertExpectedTokens(analyzer2, Lists.newArrayList(
         new TokenizerTestData("Test for tokenization.",
             new String[]{"Tes", "t", "for", "tok", "eni", "zat", "ion"}),
         new TokenizerTestData("Te,st.  punct", new String[]{"Te", "st", "pun", "ct"})));
@@ -89,18 +106,25 @@ public class JavaLuceneAnalyzerSuite {
   @Test
   @SuppressWarnings("unchecked")
   public void testCharFilters() {
-    Map<String,String> charFilterSpecification0 = new HashMap<>();
-    charFilterSpecification0.put("type", "patternreplace");
-    charFilterSpecification0.put("pattern", "[A-Za-z]+");
-    charFilterSpecification0.put("replacement", "");
-
-    Map<String,String> tokenizerSpecification = new HashMap<>();
-    tokenizerSpecification.put("type", "standard");
-
+    String analysisSchema1 = json("{\n" +
+        "'schemaType': 'LuceneAnalyzerSchema.v1',\n" +
+        "'analyzers': [{\n" +
+        "  'name': 'strip_alpha_std_tok',\n" +
+        "  'charFilters': [{\n" +
+        "    'type': 'patternreplace',\n" +
+        "    'pattern': '[A-Za-z]+',\n" +
+        "    'replacement': ''\n" +
+        "  }],\n" +
+        "  'tokenizer': {\n" +
+        "    'type': 'standard'\n" +
+        "  }\n" +
+        "}],\n" +
+        "'inputColumns': [{\n" +
+        "  'regex': '.+',\n" +
+        "  'analyzer': 'strip_alpha_std_tok'\n" +
+        "}]}\n");
     LuceneAnalyzer analyzer = new LuceneAnalyzer()
-        .setCharFilters(new scala.collection.immutable.Map[]
-            { asScalaImmutableMap(charFilterSpecification0) })
-        .setTokenizer(asScalaImmutableMap(tokenizerSpecification))
+        .setAnalysisSchema(analysisSchema1)
         .setInputCol("rawText")
         .setOutputCol("tokens");
 
@@ -108,17 +132,26 @@ public class JavaLuceneAnalyzerSuite {
         new TokenizerTestData("Test for 9983, tokenization.", new String[]{"9983"}),
         new TokenizerTestData("Te,st. punct", new String[]{})));
 
-    Map<String,String> charFilterSpecification1 = new HashMap<>();
-    charFilterSpecification1.put("type", "htmlstrip");
-
-    Map<String,String> charFilterSpecification2 = new HashMap<>();
-    charFilterSpecification2.put("type", "patternreplace");
-    charFilterSpecification2.put("pattern", "removeme");
-    charFilterSpecification2.put("replacement", "");
-
-    analyzer.setCharFilters(new scala.collection.immutable.Map[]
-        {asScalaImmutableMap(charFilterSpecification1),
-            asScalaImmutableMap(charFilterSpecification2)});
+    String analysisSchema2 = json("{\n" +
+        "'schemaType': 'LuceneAnalyzerSchema.v1',\n" +
+        "'analyzers': [{\n" +
+        "  'name': 'htmlstrip_drop_removeme_std_tok',\n" +
+        "  'charFilters': [{\n" +
+        "      'type': 'htmlstrip'\n" +
+        "    }, {\n" +
+        "      'type': 'patternreplace',\n" +
+        "      'pattern': 'removeme',\n" +
+        "      'replacement': ''\n" +
+        "  }],\n" +
+        "  'tokenizer': {\n" +
+        "    'type': 'standard'\n" +
+        "  }\n" +
+        "}],\n" +
+        "'inputColumns': [{\n" +
+        "  'name': 'rawText',\n" +
+        "  'analyzer': 'htmlstrip_drop_removeme_std_tok'\n" +
+        "}]}\n");
+    analyzer.setAnalysisSchema(analysisSchema2);
 
     assertExpectedTokens(analyzer, Lists.newArrayList(
         new TokenizerTestData("<html><body>remove<b>me</b> but leave<div>the&nbsp;rest.</div></body></html>",
@@ -127,28 +160,30 @@ public class JavaLuceneAnalyzerSuite {
 
   @Test
   public void testTokenFilters() {
-    Map<String,String> tokenizerSpecification = new HashMap<>();
-    tokenizerSpecification.put("type", "standard");
-
-    Map<String,String> filterSpecification1 = new HashMap<>();
-    filterSpecification1.put("type", "englishpossessive");
-
-    Map<String,String> filterSpecification2 = new HashMap<>();
-    filterSpecification2.put("type", "stop");
-    filterSpecification2.put("ignoreCase", "true");
-    filterSpecification2.put("format", "snowball");
-    filterSpecification2.put("words", "org/apache/lucene/analysis/snowball/english_stop.txt");
-
-    Map<String,String> filterSpecification3 = new HashMap<>();
-    filterSpecification3.put("type", "lowercase");
-
-    @SuppressWarnings("unchecked")
+    String analysisSchema = json("{\n" +
+        "'schemaType': 'LuceneAnalyzerSchema.v1',\n" +
+        "'analyzers': [{\n" +
+        "  'name': 'std_tok_possessive_stop_lower',\n" +
+        "  'tokenizer': {\n" +
+        "    'type': 'standard'\n" +
+        "  },\n" +
+        "  'filters': [{\n" +
+        "      'type': 'englishpossessive'\n" +
+        "    }, {\n" +
+        "      'type': 'stop',\n" +
+        "      'ignoreCase': 'true',\n" +
+        "      'format': 'snowball',\n" +
+        "      'words': 'org/apache/lucene/analysis/snowball/english_stop.txt'\n" +
+        "    }, {\n" +
+        "      'type': 'lowercase'\n" +
+        "  }]\n" +
+        "}],\n" +
+        "'inputColumns': [{\n" +
+        "  'name': 'rawText',\n" +
+        "  'analyzer': 'std_tok_possessive_stop_lower'\n" +
+        "}]}\n");
     LuceneAnalyzer analyzer = new LuceneAnalyzer()
-        .setTokenizer(asScalaImmutableMap(tokenizerSpecification))
-        .setFilters(new scala.collection.immutable.Map[] {
-            asScalaImmutableMap(filterSpecification1),
-            asScalaImmutableMap(filterSpecification2),
-            asScalaImmutableMap(filterSpecification3)})
+        .setAnalysisSchema(analysisSchema)
         .setInputCol("rawText")
         .setOutputCol("tokens");
     assertExpectedTokens(analyzer, Lists.newArrayList(
@@ -158,11 +193,21 @@ public class JavaLuceneAnalyzerSuite {
 
   @Test
   public void testUAX29URLEmailTokenizer() {
-    Map<String,String> tokenizerSpecification = new HashMap<>();
-    tokenizerSpecification.put("type", "uax29urlemail");
-    tokenizerSpecification.put("maxTokenLength", "2000");
+    String analysisSchema = json("{\n" +
+        "'schemaType': 'LuceneAnalyzerSchema.v1',\n" +
+        "'analyzers': [{\n" +
+        "  'name': 'uax29urlemail_2000',\n" +
+        "  'tokenizer': {\n" +
+        "    'type': 'uax29urlemail',\n" +
+        "    'maxTokenLength': '2000'\n" +
+        "  }\n" +
+        "}],\n" +
+        "'inputColumns': [{\n" +
+        "  'regex': '.+',\n" +
+        "  'analyzer': 'uax29urlemail_2000'\n" +
+        "}]}\n");
     LuceneAnalyzer analyzer = new LuceneAnalyzer()
-        .setTokenizer(asScalaImmutableMap(tokenizerSpecification))
+        .setAnalysisSchema(analysisSchema)
         .setInputCol("rawText")
         .setOutputCol("tokens");
     assertExpectedTokens(analyzer, Lists.newArrayList(
@@ -182,8 +227,7 @@ public class JavaLuceneAnalyzerSuite {
     }
   }
 
-  private scala.collection.immutable.Map<String,String> asScalaImmutableMap(Map<String,String> map) {
-    return scala.collection.immutable.Map$.MODULE$.<String,String>empty()
-        .$plus$plus(JavaConversions.mapAsScalaMap(map));
+  private String json(String singleQuoted) {
+    return singleQuoted.replaceAll("'", "\"");
   }
 }
