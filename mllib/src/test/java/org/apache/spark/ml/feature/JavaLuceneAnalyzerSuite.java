@@ -217,9 +217,80 @@ public class JavaLuceneAnalyzerSuite {
             new String[]{"Email", "caffeine@coffee.biz", "for", "tips", "on", "staying", "alert"})));
   }
 
-  private void assertExpectedTokens(LuceneAnalyzer analyzer, List<TokenizerTestData> testData) {
-    JavaRDD<TokenizerTestData> rdd = jsc.parallelize(testData);
-    Row[] pairs = analyzer.transform(jsql.createDataFrame(rdd, TokenizerTestData.class))
+  @Test
+  public void testMultivaluedInputCol() {
+    LuceneAnalyzer analyzer = new LuceneAnalyzer()
+        .setInputCols(new String[]{"rawText"})
+        .setOutputCol("tokens");
+    assertExpectedTokens(analyzer, Lists.newArrayList(
+        new MV_TokenizerTestData(new String[] {"Harold's not around.", "The dog's nose KNOWS!"},
+            new String[]{"harold's", "not", "around", "the", "dog's", "nose", "knows"})));
+  }
+
+  @Test
+  public void testMultipleInputCols() {
+    LuceneAnalyzer analyzer1 = new LuceneAnalyzer()
+        .setInputCols(new String[] {"rawText1", "rawText2"})
+        .setOutputCol("tokens");
+    assertExpectedTokens(analyzer1, Lists.newArrayList(
+        new SV_SV_TokenizerTestData("Harold's not around.", "The dog's nose KNOWS!",
+            new String[] {"harold's", "not", "around", "the", "dog's", "nose", "knows"})));
+
+    String analysisSchema = json("{\n" +
+        "'schemaType': 'LuceneAnalyzerSchema.v1',\n" +
+        "'analyzers': [{\n" +
+        "    'name': 'std_tok_lower',\n" +
+        "    'tokenizer': { 'type': 'standard' },\n" +
+        "    'filters':[{ 'type': 'lowercase' }]\n" +
+        "  }, {\n" +
+        "    'name': 'std_tok',\n" +
+        "    'tokenizer': { 'type': 'standard' }\n" +
+        "  }, {\n" +
+        "    'name': 'htmlstrip_std_tok_lower',\n" +
+        "    'charFilters': [{ 'type': 'htmlstrip' }],\n" +
+        "    'tokenizer': { 'type': 'standard' },\n" +
+        "    'filters': [{ 'type': 'lowercase' }]\n" +
+        "}],\n" +
+        "'inputColumns': [{\n" +
+        "    'name': 'rawText1',\n" +
+        "    'analyzer': 'std_tok_lower'\n" +
+        "  }, {\n" +
+        "    'name': 'rawText2',\n" +
+        "    'analyzer': 'std_tok'\n" +
+        "  }, {\n" +
+        "    'regex': '.+',\n" +
+        "    'analyzer': 'htmlstrip_std_tok_lower'\n" +
+        "}]}\n");
+    LuceneAnalyzer analyzer2 = new LuceneAnalyzer()
+        .setAnalysisSchema(analysisSchema)
+        .setInputCols(new String[] {"rawText1", "rawText2"})
+        .setOutputCol("tokens");
+    assertExpectedTokens(analyzer2, Lists.newArrayList(
+        new SV_SV_TokenizerTestData("Harold's NOT around.", "The dog's nose KNOWS!",
+            new String[]{"harold's", "not", "around", "The", "dog's", "nose", "KNOWS"})));
+
+    assertExpectedTokens(analyzer2, Lists.newArrayList(
+        new SV_MV_TokenizerTestData("Harold's NOT around.",
+            new String[] {"The dog's nose KNOWS!", "Good, fine, great..."},
+            new String[] {"harold's", "not", "around", "The", "dog's",
+                "nose", "KNOWS", "Good", "fine", "great"})));
+
+    assertExpectedTokens(analyzer2, Lists.newArrayList(
+        new MV_MV_TokenizerTestData(new String[] {"Harold's NOT around.", "Anymore, I mean."},
+            new String[] {"The dog's nose KNOWS!", "Good, fine, great..."},
+            new String[] {"harold's", "not", "around", "anymore", "i", "mean",
+                "The", "dog's", "nose", "KNOWS", "Good", "fine", "great"})));
+
+    analyzer2.setInputCols(new String[] {"rawText1", "rawText2", "rawText3"});
+    assertExpectedTokens(analyzer2, Lists.newArrayList(
+        new SV_SV_SV_TokenizerTestData(
+            "Harold's NOT around.", "The dog's nose KNOWS!", "<html><body>Content</body></html>",
+            new String[]{"harold's", "not", "around", "The", "dog's", "nose", "KNOWS", "content"})));
+  }
+
+  private <T> void assertExpectedTokens(LuceneAnalyzer analyzer, List<T> testData) {
+    JavaRDD<T> rdd = jsc.parallelize(testData);
+    Row[] pairs = analyzer.transform(jsql.createDataFrame(rdd, testData.get(0).getClass()))
         .select("tokens", "wantedTokens")
         .collect();
     for (Row r : pairs) {

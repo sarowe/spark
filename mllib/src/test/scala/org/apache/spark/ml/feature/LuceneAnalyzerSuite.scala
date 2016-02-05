@@ -22,6 +22,8 @@ import org.apache.spark.ml.param.ParamsSuite
 import org.apache.spark.mllib.util.MLlibTestSparkContext
 import org.apache.spark.sql.{Row, DataFrame}
 
+import scala.beans.BeanInfo
+
 class LuceneAnalyzerSuite extends SparkFunSuite with MLlibTestSparkContext {
   import org.apache.spark.ml.feature.LuceneAnalyzerSuite._
 
@@ -215,12 +217,94 @@ class LuceneAnalyzerSuite extends SparkFunSuite with MLlibTestSparkContext {
     ))
     testLuceneAnalyzer(analyzer, dataset)
   }
+
+  test("MultivaluedInputCol") {
+    val analyzer = new LuceneAnalyzer()
+      .setInputCols(Array("rawText"))
+      .setOutputCol("tokens")
+    val dataset = sqlContext.createDataFrame(Seq(
+      MV_TokenizerTestData(Array("Harold's not around.", "The dog's nose KNOWS!"),
+        Array("harold's", "not", "around", "the", "dog's", "nose", "knows"))
+    ))
+    testLuceneAnalyzer(analyzer, dataset)
+  }
+
+  test("MultipleInputCols") {
+    val analyzer1 = new LuceneAnalyzer()
+      .setInputCols(Array("rawText1", "rawText2"))
+      .setOutputCol("tokens")
+    val dataset1 = sqlContext.createDataFrame(Seq(
+      SV_SV_TokenizerTestData("Harold's not around.", "The dog's nose KNOWS!",
+        Array("harold's", "not", "around", "the", "dog's", "nose", "knows"))
+    ))
+    testLuceneAnalyzer(analyzer1, dataset1)
+
+    val analyzerConfig = """
+                           |{
+                           |  "schemaType": "LuceneAnalyzerSchema.v1",
+                           |  "analyzers": [{
+                           |      "name": "std_tok_lower",
+                           |      "tokenizer": { "type": "standard" },
+                           |      "filters":[{ "type": "lowercase" }]
+                           |    }, {
+                           |      "name": "std_tok",
+                           |      "tokenizer": { "type": "standard" }
+                           |    }, {
+                           |      "name": "htmlstrip_std_tok_lower",
+                           |      "charFilters": [{ "type": "htmlstrip" }],
+                           |      "tokenizer": { "type": "standard" },
+                           |      "filters": [{ "type": "lowercase" }]
+                           |  }],
+                           |  "inputColumns": [{
+                           |      "name": "rawText1",
+                           |      "analyzer": "std_tok_lower"
+                           |    }, {
+                           |      "name": "rawText2",
+                           |      "analyzer": "std_tok"
+                           |    }, {
+                           |      "regex": ".+",
+                           |      "analyzer": "htmlstrip_std_tok_lower"
+                           |  }]
+                           |}""".stripMargin
+    val analyzer2 = new LuceneAnalyzer()
+      .setAnalysisSchema(analyzerConfig)
+      .setInputCols(Array("rawText1", "rawText2"))
+      .setOutputCol("tokens")
+    val dataset2 = sqlContext.createDataFrame(Seq(
+      SV_SV_TokenizerTestData("Harold's NOT around.", "The dog's nose KNOWS!",
+        Array("harold's", "not", "around", "The", "dog's", "nose", "KNOWS"))
+    ))
+    testLuceneAnalyzer(analyzer2, dataset2)
+
+    val dataset3 = sqlContext.createDataFrame(Seq(
+      SV_MV_TokenizerTestData("Harold's NOT around.",
+        Array("The dog's nose KNOWS!", "Good, fine, great..."),
+        Array("harold's", "not", "around", "The", "dog's",
+          "nose", "KNOWS", "Good", "fine", "great"))
+    ))
+    testLuceneAnalyzer(analyzer2, dataset3)
+
+    val dataset4 = sqlContext.createDataFrame(Seq(
+      MV_MV_TokenizerTestData(Array("Harold's NOT around.", "Anymore, I mean."),
+        Array("The dog's nose KNOWS!", "Good, fine, great..."),
+        Array("harold's", "not", "around", "anymore", "i", "mean",
+          "The", "dog's", "nose", "KNOWS", "Good", "fine", "great"))
+    ))
+    testLuceneAnalyzer(analyzer2, dataset4)
+
+    analyzer2.setInputCols(Array("rawText1", "rawText2", "rawText3"))
+    val dataset5 = sqlContext.createDataFrame(Seq(
+      SV_SV_SV_TokenizerTestData(
+        "Harold's NOT around.", "The dog's nose KNOWS!", "<html><body>Content</body></html>",
+        Array("harold's", "not", "around", "The", "dog's", "nose", "KNOWS", "content"))
+    ))
+    testLuceneAnalyzer(analyzer2, dataset5)
+  }
 }
 
 object LuceneAnalyzerSuite extends SparkFunSuite {
 
   def testLuceneAnalyzer(t: LuceneAnalyzer, dataset: DataFrame): Unit = {
-    logError(">>>>> Columns: " + dataset.columns.mkString(", "))
     t.transform(dataset)
       .select("tokens", "wantedTokens")
       .collect()
@@ -229,3 +313,21 @@ object LuceneAnalyzerSuite extends SparkFunSuite {
       }
   }
 }
+
+@BeanInfo
+case class SV_SV_TokenizerTestData(rawText1: String, rawText2: String, wantedTokens: Array[String])
+
+@BeanInfo
+case class MV_TokenizerTestData(rawText: Array[String], wantedTokens: Array[String])
+
+@BeanInfo
+case class SV_MV_TokenizerTestData
+  (rawText1: String, rawText2: Array[String], wantedTokens: Array[String])
+
+@BeanInfo
+case class MV_MV_TokenizerTestData
+  (rawText1: Array[String], rawText2: Array[String], wantedTokens: Array[String])
+
+@BeanInfo
+case class SV_SV_SV_TokenizerTestData
+  (rawText1: String, rawText2: String, rawText3: String, wantedTokens: Array[String])
