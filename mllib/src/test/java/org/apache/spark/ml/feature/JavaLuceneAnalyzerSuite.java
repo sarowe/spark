@@ -28,6 +28,7 @@ import org.junit.Test;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.sql.SQLContext;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class JavaLuceneAnalyzerSuite {
@@ -286,6 +287,40 @@ public class JavaLuceneAnalyzerSuite {
         new SV_SV_SV_TokenizerTestData(
             "Harold's NOT around.", "The dog's nose KNOWS!", "<html><body>Content</body></html>",
             new String[]{"harold's", "not", "around", "The", "dog's", "nose", "KNOWS", "content"})));
+  }
+
+  @Test
+  public void testPrefixTokensWithInputCol() {
+    String[] rawText1 = new String[] { "Harold's NOT around.", "Anymore, I mean." };
+    String[] tokens1 = new String[] { "harold's", "not", "around", "anymore", "i", "mean" };
+
+    String[] rawText2 = new String[] { "The dog's nose KNOWS!", "Good, fine, great..." };
+    String[] tokens2 = new String[] { "the", "dog's", "nose", "knows", "good", "fine", "great" };
+
+    List<String> tokenList = new ArrayList<>();
+    List<String> prefixedTokenList = new ArrayList<>();
+    for (String token : tokens1) {
+      tokenList.add(token);
+      prefixedTokenList.add("rawText1=" + token);
+    }
+    for (String token : tokens2) {
+      tokenList.add(token);
+      prefixedTokenList.add("rawText2=" + token);
+    }
+    String[] tokens = tokenList.toArray(new String[tokenList.size()]);
+    String[] prefixedTokens = prefixedTokenList.toArray(new String[prefixedTokenList.size()]);
+
+    // First transform without token prefixes
+    LuceneAnalyzer analyzer = new LuceneAnalyzer()
+        .setInputCols(new String[] {"rawText1", "rawText2"})
+        .setOutputCol("tokens");
+    assertExpectedTokens(analyzer, Lists.newArrayList(
+        new MV_MV_TokenizerTestData(rawText1, rawText2, tokens)));
+
+    // Then transform with token prefixes
+    analyzer.setPrefixTokensWithInputCol(true);
+    assertExpectedTokens(analyzer, Lists.newArrayList(
+        new MV_MV_TokenizerTestData(rawText1, rawText2, prefixedTokens)));
   }
 
   private <T> void assertExpectedTokens(LuceneAnalyzer analyzer, List<T> testData) {
