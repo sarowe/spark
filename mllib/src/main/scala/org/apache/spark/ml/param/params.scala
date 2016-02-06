@@ -73,7 +73,7 @@ class Param[T](val parent: String, val name: String, val doc: String, val isVali
   def w(value: T): ParamPair[T] = this -> value
 
   /** Creates a param pair with the given value (for Scala). */
-  def -> (value: T): ParamPair[T] = ParamPair(this, value)
+  def ->(value: T): ParamPair[T] = ParamPair(this, value)
 
   override final def toString: String = s"${parent}__$name"
 
@@ -314,41 +314,6 @@ class IntArrayParam(parent: Params, name: String, doc: String, isValid: Array[In
   /** Creates a param pair with a [[java.util.List]] of values (for Java and Python). */
   def w(value: java.util.List[java.lang.Integer]): ParamPair[Array[Int]] =
     w(value.asScala.map(_.asInstanceOf[Int]).toArray)
-}
-
-/**
- * :: DeveloperApi ::
- * Specialized version of [[Param[Array[Map[String, String]]]]] for Java.
- */
-@DeveloperApi
-class StringStringMapArrayParam
-(parent: Params, name: String, doc: String, isValid: Array[Map[String, String]] => Boolean)
-  extends Param[Array[Map[String, String]]](parent, name, doc, isValid) {
-
-  def this(parent: Params, name: String, doc: String) =
-    this(parent, name, doc, ParamValidators.alwaysTrue)
-
-  /** Creates a param pair with a [[java.util.List]] of [[java.util.Map]] values
-    * (for Java and Python). */
-  def w(value: java.util.List[java.util.Map[String, String]]): ParamPair[Array[Map[String, String]]]
-   = w(value.asScala.map(_.asScala.toMap).toArray)
-}
-
-/**
- * :: DeveloperApi ::
- * Specialized version of [[Param[Map[String, String]]]] for Java.
- */
-@DeveloperApi
-class StringStringMapParam
-(parent: Params, name: String, doc: String, isValid: Map[String, String] => Boolean)
-  extends Param[Map[String, String]](parent, name, doc, isValid) {
-
-  def this(parent: Params, name: String, doc: String) =
-    this(parent, name, doc, ParamValidators.alwaysTrue)
-
-  /** Creates a param pair with a [[java.util.Map]] value (for Java and Python). */
-  def w(value: java.util.Map[String, String]): ParamPair[Map[String, String]]
-    = w(value.asScala.toMap)
 }
 
 /**
